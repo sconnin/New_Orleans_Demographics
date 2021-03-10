@@ -1,0 +1,63 @@
+---
+title: "Proj_2New_Orleans"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rvest)
+library(tidyverse)
+library(magrittr)
+```
+
+## R 
+
+```{r}
+h <- read_html('https://en.wikipedia.org/wiki/Atlantic_hurricane_season')
+storms <- h %>%
+  html_nodes("table") %>%
+  html_table(fill = TRUE)
+
+storms<-storms[c(-1,-2,-3,-4,-5,-6,-7)]
+
+storms<-lapply(storms, function(x) filter(x, x$Year != "Total"))
+storms<-lapply(storms, function(x) x[!(names(x) %in% c("Retired names", "Major landfall hurricanes","Number oftropical cyclones"))])
+
+storms <- lapply(storms, function(x) {x$Year <- as.character(x$Year);x})
+
+storms<- lapply(storms, function(x) {colnames(x)[2] <- 'Number_Tropical_Storms'; x})
+storms<- lapply(storms, function(x) {colnames(x)[3] <- 'Number_Hurricanes'; x}) 
+storms<- lapply(storms, function(x) {colnames(x)[4] <- 'Number_Major_Hurricanes'; x})
+storms<- lapply(storms, function(x) {colnames(x)[5] <- 'Accumuated_Cyclone_Energy'; x})
+storms<- lapply(storms, function(x) {colnames(x)[7] <- 'Damage_USD'; x})
+storms<- lapply(storms, function(x) {colnames(x)[8] <- 'Strongest_Storms'; x})
+
+
+
+#storm<- lapply(storms, function(x) {x$Deaths <- as.integer(x$Deaths);x})
+
+storms<-purrr::map_dfr(storms[], dplyr::bind_rows)
+
+glimpse(combined)
+View(combined)
+
+#ACE accumulated cyclone energy
+
+#result <- purrr::keep(storms, ~ ncol(.x) == 11)
+# <- storms %>% reduce(bind_rows)
+
+```
+## Ethan
+```{r}
+scraped <- read_html('https://en.wikipedia.org/wiki/Atlantic_hurricane_season')
+
+tables <- html_table(scraped, fill=T)
+
+for (i in 1:length(tables)) {
+    write.table(tables[i], 
+    paste("wiki_", as.character(i), 
+    ".csv", sep = ''),
+    col.names = T, sep = ',')
+}
+
+```
