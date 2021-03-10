@@ -1,5 +1,6 @@
 ---
 title: "Proj_2New_Orleans"
+author: "Sean Connin"
 output: html_document
 ---
 
@@ -8,20 +9,32 @@ knitr::opts_chunk$set(echo = TRUE)
 library(rvest)
 library(tidyverse)
 library(magrittr)
+#library(stringr)
+library(ggplot2)
+library(corrplot)
+
+
 ```
 
-## R 
+## Download and Clean Wikipedia Tables
 
 ```{r}
-h <- read_html('https://en.wikipedia.org/wiki/Atlantic_hurricane_season')
-storms <- h %>%
+
+# import Wikipedia data tables into a list of dataframes
+
+temp <- read_html('https://en.wikipedia.org/wiki/Atlantic_hurricane_season')
+storms <- temp %>%
   html_nodes("table") %>%
   html_table(fill = TRUE)
+
+# Iterate over list and subset dataframe columns
 
 storms<-storms[c(-1,-2,-3,-4,-5,-6,-7)]
 
 storms<-lapply(storms, function(x) filter(x, x$Year != "Total"))
-storms<-lapply(storms, function(x) x[!(names(x) %in% c("Retired names", "Major landfall hurricanes","Number oftropical cyclones"))])
+storms<-lapply(storms, function(x) x[!(names(x) %in% c("Retired names", "Major landfall hurricanes","Number oftropical cyclones", "Notes", "Strongeststorm"))])
+
+# Convert Year column to character type and rename columns as appropriate
 
 storms <- lapply(storms, function(x) {x$Year <- as.character(x$Year);x})
 
@@ -30,34 +43,92 @@ storms<- lapply(storms, function(x) {colnames(x)[3] <- 'Number_Hurricanes'; x})
 storms<- lapply(storms, function(x) {colnames(x)[4] <- 'Number_Major_Hurricanes'; x})
 storms<- lapply(storms, function(x) {colnames(x)[5] <- 'Accumuated_Cyclone_Energy'; x})
 storms<- lapply(storms, function(x) {colnames(x)[7] <- 'Damage_USD'; x})
-storms<- lapply(storms, function(x) {colnames(x)[8] <- 'Strongest_Storms'; x})
 
-
-
-#storm<- lapply(storms, function(x) {x$Deaths <- as.integer(x$Deaths);x})
+# Combine list elements to create a single dataframe 
 
 storms<-purrr::map_dfr(storms[], dplyr::bind_rows)
 
-glimpse(combined)
-View(combined)
+# clean/rename Deaths col and change type to integer
 
-#ACE accumulated cyclone energy
+storms<-storms%>%
+  mutate(Deaths, Deaths=sub("None", "0", Deaths))%>%
+  mutate(Deaths, Deaths=sub("Unknown", "", Deaths))%>%
+  mutate(Deaths, Deaths=sub("\\+", "", Deaths))%>%
+  mutate(Deaths, Deaths=sub(",", "", Deaths))%>%
+  mutate(Deaths, Deaths=sub(">", "", Deaths))%>%
+  mutate(Deaths, Deaths=sub("~", "", Deaths))%>%
+  rename(Min_Known_Deaths = Deaths) 
 
-#result <- purrr::keep(storms, ~ ncol(.x) == 11)
-# <- storms %>% reduce(bind_rows)
+storms$Min_Known_Deaths <- as.integer(storms$Min_Known_Deaths)
 
-```
-## Ethan
-```{r}
-scraped <- read_html('https://en.wikipedia.org/wiki/Atlantic_hurricane_season')
 
-tables <- html_table(scraped, fill=T)
+# clean Damage_USD column and convert to type integer
 
-for (i in 1:length(tables)) {
-    write.table(tables[i], 
-    paste("wiki_", as.character(i), 
-    ".csv", sep = ''),
-    col.names = T, sep = ',')
-}
+storms<-storms%>%
+  mutate(Damage_USD, Damage_USD=sub("\\$", "",  Damage_USD))%>%
+  mutate(Damage_USD, Damage_USD=sub("\\.", "", Damage_USD))%>%
+  mutate(Damage_USD, Damage_USD=sub("\\smillion", "000000", Damage_USD))%>%
+  mutate(Damage_USD, Damage_USD=sub("\\sbillion", "000000000",  Damage_USD))%>%
+  mutate(Damage_USD, Damage_USD=sub(">|\\+|,", "",  Damage_USD))%>%
+  mutate(Damage_USD = str_extract_all(Damage_USD, "\\d+"))
+
+storms$Damage_USD<-as.integer(storms$Damage_USD)
+
+# Calculate Summary Statistics 
+
+(summary(storms))
+
+# Create Correlogram to evaluate relationships between variables, Remove missing values from Min_Known_Deaths and Damage_USD to accomplish this. 
+  
+sub_storms <- storms %>% drop_na()
+
+corr_storms<-cor(sub_storms[sapply(storms, is.numeric)])
+corr_storms <- corrplot(corr_storms, method='number')
+
+# Plot storms numbers over time 
+
+num <- storms%>%select(Year, Number_Hurricanes, Number_Major_Hurricanes)%>%
+  rename(Hurricanes = Number_Hurricanes, Major_Hurricanes = Number_Major_Hurricanes)%>%
+  pivot_longer(cols=-c(Year), names_to = "Storm_Type", values_to = "Storm_Number")
+
+num%>%ggplot(aes(x = Year, y = Storm_Number, group = Storm_Type, color = Storm_Type))+
+  geom_line()+
+  scale_x_discrete(breaks=c("1900","1920", "1940", "1960", "1980", "2000","2020"))+
+  theme_bw()+
+  #theme(axis.text.x  = element_text(angle=90, vjust=0.5))+
+  theme(axis.title.x = element_text(size=14))+
+  theme(axis.title.y = element_text(size=14))+
+  labs(y="Number of Storms", x = "Year")+
+  labs(color = "Storm Type")+
+  ggtitle("Annual Count of Atlantic Storms Since 1900")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+#Plot storm intensity vs Deaths 
+
+(ace_death<-storms%>%ggplot(aes(Accumuated_Cyclone_Energy, Min_Known_Deaths))+
+    geom_point()+
+  theme_bw())
+
+#Plot storm intensity vs. damage
+
+(ace_death<-storms%>%ggplot(aes(Accumuated_Cyclone_Energy, Damage_USD))+
+    geom_point()+
+    theme_bw())
+
+#Plot storm intensity vs. Year
+
+(cyclone<-storms%>%ggplot(aes(Year, Accumuated_Cyclone_Energy))+
+  geom_point()+
+  scale_x_discrete(breaks=c("1900","1920", "1940", "1960", "1980", "2000","2020"))+
+  geom_vline(xintercept = "2005", linetype="dotted", color = "red", size=0.5)+
+  theme_bw()+
+  #theme(axis.text.x  = element_text(angle=90, vjust=0.5))+
+  theme(axis.title.x = element_text(size=14))+
+  theme(axis.title.y = element_text(size=14))+
+  labs(y="Accumulated Cyclone Energy", x = "Year")+
+  ggtitle("Annual Accumulated Cyclone Energy Since 1900")+
+  theme(plot.title = element_text(hjust = 0.5)))
+
+glimpse(num)
 
 ```
