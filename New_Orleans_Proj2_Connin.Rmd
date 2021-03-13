@@ -9,14 +9,29 @@ knitr::opts_chunk$set(echo = TRUE)
 library(rvest)
 library(tidyverse)
 library(magrittr)
-#library(stringr)
 library(ggplot2)
 library(corrplot)
 
 
 ```
 
-## Download and Clean Wikipedia Tables
+## 1. Wikipedia Tables: Overview
+
+In this section we explore patterns of recorded hurricane activity from 1900 -to- present in the Atlantic Ocean, Gulf of Mexico and Caribbean Sea. Our goal was to address the following questions:
+
+1. Are there long-term trends in season hurricane activity that are apparent across broad geographic areas?
+2. Do cumulative measures of storm intensity correlate with storm related deaths or property damage? 
+3. Was 2005 hurricane season, which included Hurricane Katrina, atypical in terms of total storm activity?
+
+The data used in our analysis can be obtained via. NOAA's "North Atlantic hurricane Database (HURDAT)". However, we extracted the information from 20 html tables listed on the Wikipedia page, "Atlantic hurricane season". 
+
+Steps taken to format the data for analysis in R (i.e., Tidy format) included: 1) importing the data into RStudio as a list of dataframes (each representing different periods of time); 2) iterating over this list to subset, filter, rename, and update column types; and 3) combining these elements (20 total) into a final dataframe. 
+
+Additional cleaning was required to address uncertainties inherent to values recorded for several variables. For example, storm related deaths included values (char type) input as "Unknown", single numbers, approximate values, and/or a range of values. We converted this information to integer type and limited values to the minimum number of known deaths - values included as "Unknown" were treated as missing (NA) in order to make quantitative comparisons to other variables. We applied similar steps to a variable for annual storm damage. 
+
+Once in Tidy form, we exported the dataset to an external .csv file. We then proceeded with our analyses. 
+
+The following code documents the steps described above to import, clean, analyze, and export our data. This is followed by our summary for this section.
 
 ```{r}
 
@@ -41,7 +56,7 @@ storms <- lapply(storms, function(x) {x$Year <- as.character(x$Year);x})
 storms<- lapply(storms, function(x) {colnames(x)[2] <- 'Number_Tropical_Storms'; x})
 storms<- lapply(storms, function(x) {colnames(x)[3] <- 'Number_Hurricanes'; x}) 
 storms<- lapply(storms, function(x) {colnames(x)[4] <- 'Number_Major_Hurricanes'; x})
-storms<- lapply(storms, function(x) {colnames(x)[5] <- 'Accumuated_Cyclone_Energy'; x})
+storms<- lapply(storms, function(x) {colnames(x)[5] <- 'Accumulated_Cyclone_Energy'; x})
 storms<- lapply(storms, function(x) {colnames(x)[7] <- 'Damage_USD'; x})
 
 # Combine list elements to create a single dataframe 
@@ -76,59 +91,84 @@ storms$Damage_USD<-as.integer(storms$Damage_USD)
 
 # Calculate Summary Statistics 
 
-(summary(storms))
+summary(storms)
 
-# Create Correlogram to evaluate relationships between variables, Remove missing values from Min_Known_Deaths and Damage_USD to accomplish this. 
-  
-sub_storms <- storms %>% drop_na()
-
-corr_storms<-cor(sub_storms[sapply(storms, is.numeric)])
-corr_storms <- corrplot(corr_storms, method='number')
-
-# Plot storms numbers over time 
+# Plot storms counts over time 
 
 num <- storms%>%select(Year, Number_Hurricanes, Number_Major_Hurricanes)%>%
-  rename(Hurricanes = Number_Hurricanes, Major_Hurricanes = Number_Major_Hurricanes)%>%
-  pivot_longer(cols=-c(Year), names_to = "Storm_Type", values_to = "Storm_Number")
+  rename(Hurricanes = Number_Hurricanes, Major_Hurricanes=
+    Number_Major_Hurricanes)%>%
+    pivot_longer(cols=-c(Year), names_to = "Storm_Type", values_to=
+    "Storm_Number")
 
-num%>%ggplot(aes(x = Year, y = Storm_Number, group = Storm_Type, color = Storm_Type))+
-  geom_line()+
-  scale_x_discrete(breaks=c("1900","1920", "1940", "1960", "1980", "2000","2020"))+
-  theme_bw()+
-  #theme(axis.text.x  = element_text(angle=90, vjust=0.5))+
-  theme(axis.title.x = element_text(size=14))+
-  theme(axis.title.y = element_text(size=14))+
-  labs(y="Number of Storms", x = "Year")+
-  labs(color = "Storm Type")+
-  ggtitle("Annual Count of Atlantic Storms Since 1900")+
-  theme(plot.title = element_text(hjust = 0.5))
+num%>%ggplot(aes(x = Year, y = Storm_Number, group = Storm_Type, color=
+    Storm_Type))+
+    geom_line()+
+    scale_x_discrete(breaks=c("1900","1920", "1940", "1960",
+    "1980","2000","2020"))+
+    theme_bw()+
+    theme(axis.title.x = element_text(size=14))+
+    theme(axis.title.y = element_text(size=14))+
+    labs(y="Number of Storms", x = "Year")+
+    labs(color = "Storm Type")+
+    ggtitle("Annual Count of Atlantic Storms Since 1900")+
+    theme(plot.title = element_text(hjust = 0.5))
 
-#Plot storm intensity vs Deaths 
+View(storms)
 
-(ace_death<-storms%>%ggplot(aes(Accumuated_Cyclone_Energy, Min_Known_Deaths))+
+# Compare accumulated storm energy from 1900-Present
+
+ace <- storms%>%select(Year, Accumulated_Cyclone_Energy)
+    
+ace%>%ggplot(aes(x = Year, y = Accumulated_Cyclone_Energy))+
     geom_point()+
-  theme_bw())
+    scale_x_discrete(breaks=c("1900","1920", "1940", "1960", "1980",
+    "2000","2020"))+
+    geom_hline(yintercept = 152.5, linetype="solid", label= "Extremely Active
+    Season", color = "light blue", size=1.0)+
+    geom_vline(xintercept = "2005", linetype="dotted", color = "red",
+    size=0.75)+
+    theme_bw()+
+    theme(axis.title.x = element_text(size=11))+
+    theme(axis.title.y = element_text(size=11))+
+    labs(y="ACE (kt)", x = "Year", title = "Annual Accumulated Energy of
+    Atlantic Storms Since 1900", subtitle = "Reported in Square Knots (kt)")+
+    theme(plot.title = element_text(hjust = 0.5))+
+    theme(plot.subtitle=element_text(size=11, hjust=0.5, face="italic",
+    color="black"))
 
-#Plot storm intensity vs. damage
+# Compare storm related deaths vs. accumulated storm energy by year
 
-(ace_death<-storms%>%ggplot(aes(Accumuated_Cyclone_Energy, Damage_USD))+
+ace_death<-storms
+
+ace_death%>%ggplot(aes(Accumulated_Cyclone_Energy, Min_Known_Deaths))+
     geom_point()+
-    theme_bw())
+    theme_bw()+
+    theme(axis.title.x = element_text(size=10))+
+    theme(axis.title.y = element_text(size=10))+
+    labs(y="Documented Deaths (Minimum Count)", x = "Accumulated
+    Cyclone Energy (kt)", title = "Storm Related Deaths vs. Cumulative Storm
+    Intensity: 1900 to Present")+
+    theme(plot.title = element_text(hjust = 0.5))
 
-#Plot storm intensity vs. Year
+# Compare total storm damage vs. accumulated storm energy by year
 
-(cyclone<-storms%>%ggplot(aes(Year, Accumuated_Cyclone_Energy))+
-  geom_point()+
-  scale_x_discrete(breaks=c("1900","1920", "1940", "1960", "1980", "2000","2020"))+
-  geom_vline(xintercept = "2005", linetype="dotted", color = "red", size=0.5)+
-  theme_bw()+
-  #theme(axis.text.x  = element_text(angle=90, vjust=0.5))+
-  theme(axis.title.x = element_text(size=14))+
-  theme(axis.title.y = element_text(size=14))+
-  labs(y="Accumulated Cyclone Energy", x = "Year")+
-  ggtitle("Annual Accumulated Cyclone Energy Since 1900")+
-  theme(plot.title = element_text(hjust = 0.5)))
+ace_damage<-storms
 
-glimpse(num)
+ace_damage%>%ggplot(aes(Accumulated_Cyclone_Energy, Damage_USD))+
+    geom_point()+
+    theme_bw()+
+    theme(axis.title.x = element_text(size=10))+
+    theme(axis.title.y = element_text(size=10))+
+    labs(y="Storm Damage (USD)", x = "Accumulated
+    Cyclone Energy (kt)", title = "Total Storm Damage vs. Cumulative Storm
+    Intensity: 1900 to Present")+
+    theme(plot.title = element_text(hjust = 0.5))
+
+
+
 
 ```
+## 1. Wikipedia Tables: Results 
+
+Will work on this before we meet.
