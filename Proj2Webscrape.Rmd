@@ -1,10 +1,9 @@
 ---
 title: "Map of Surviving Historic Landmarks in Orleans Parish"
-author: "Ethan Haley"
-date: "3/5/2021"
+author:
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -14,9 +13,18 @@ library(stringr)
 library(tidyverse)
 ```
 
+#### Procedure Overview
+In this section, the goal is to build an interactive map of Orleans Parish,
+showing historic and geographic features to help us better understand the area.
 
-#### GeoJSON data showing historical landmarks and jazz musician homes
-site/cite: "https://data.nola.gov/Geographic-Base-Layers/Local-Landmarks/srrj-xwma"
+To do so, we'll use GeoJSON data showing historic landmarks and jazz musician
+homes, downloaded from a New Orleans government website.  The jazz homes data
+will be loaded without transformation into a map layer using kepler.gl, but the
+landmarks data will need to undergo a process of flattening and processing, in
+order to extract dates from it.  With properly formatted dates, the data can then
+be used in the kepler.gl application to add a dimension of time to the map.  
+This procedure will also allow us to do some basic analysis of the data, and to
+draw some interesting conclusions about Orleans Parish and its history.
 
 ```{r, include=FALSE}
 #install.packages('jsonlite')
@@ -24,8 +32,10 @@ site/cite: "https://data.nola.gov/Geographic-Base-Layers/Local-Landmarks/srrj-xw
 library(jsonlite)
 library(geojsonR)
 ```
-#####
-Use the geojsonR and jsonlite packages to convert the geoJSON files to flattened (un-nested) tables.  
+
+#### Procedure Detail
+
+Use the geojsonR and jsonlite packages to load the geoJSON files.  
 
 ```{r}
 source <- "https://data.nola.gov/Geographic-Base-Layers/Local-Landmarks/srrj-xwma"
@@ -36,27 +46,29 @@ class(landmarks)
 ```{r}
 names(landmarks)
 ```
-What do those even hold?
+What do these hold?
 
 ```{r}
 c(length(landmarks$features), length(landmarks$type))
 ```
-After learning the hard way not to look at 1242 mystery objects:
+With JSON objects, or any objects, for that matter, it's often best
+to inspect 1242 things cautiously:
 ```{r}
 str(landmarks$features[[1]])
 ```
 
 So each item in the feature list (1242 of them) is one landmark.
-Each of these comprises a `$type` field ("Feature", self-referentially), another nested structure "geometry", describing its own `$type` as "Point" or "MultiPolygon" for some items, and listing its two `$coordinate`s, and then a bunch of `$properties` like architect, address, year of construction, etc.
+Each of these comprises a `type` field ("Feature", self-referentially), another nested structure `geometry`, describing its own `type` as `Point` or `MultiPolygon` for some items, and listing its two `coordinates`, and then a bunch of `properties` like architect, address, year of construction, etc.
 
-
+Build a utility function in hopes of saving some time further down the
+line when processing other GeoJSON files.
 ```{r}
 # this function takes a geojson file as input and returns a list of 2 data.frames,
 ## one for the Points, and one for the MultiPolygons
 geojson2table <- function(gjfile) {
   geo <- FROM_GeoJson(gjfile)
-  pointframe <- 0
-  polyframe  <- 0
+  pointframe <- 0  # accumulate Points here
+  polyframe  <- 0  # and MultiPolygons here
   for (feat in geo$features){
     if (feat$geometry$type == 'Point') {
       if (!is.data.frame(pointframe)) {
@@ -72,11 +84,12 @@ geojson2table <- function(gjfile) {
         }
       }
   }
-  # Transforming the nested structure to a data.frame makes two rows for each
-  # observation: 1 for the latitude and one for longitude.  Pivoting wider
-  # doesn't work though, since each lat/lon is a value.
+  # Transforming the nested structure using data.frame() makes two rows for each
+  # observation: 1 for the latitude and one for longitude.  Pivoting these 
+  # wider doesn't work though, since each lat/lon is an actual value.
 
-  # combine every 2 rows into lat/lon pairs using "lead"
+  # Plan B: Combine every 2 rows into lat/lon pairs using lead(), and then
+  # remove the redundant rows.
   pointframe$lat <- lead(pointframe$geometry.coordinates)
   pointframe$lon <- pointframe$geometry.coordinates
   # now drop every second row, which is a dupe
@@ -86,7 +99,7 @@ geojson2table <- function(gjfile) {
 }
 ```
 #
-### Make 2 frames for Landmarks, using the above function
+##### Make 2 frames for Landmarks, using the above function
 #####
 ```{r}
 landmarklist <- geojson2table('untidyData/Local Landmarks.geojson')
@@ -95,27 +108,27 @@ names(landmarklist)
 ##### And write them to csv
 #####
 ```{r}
-write.csv(landmarklist$points, 'landmarkPoints.csv')
-write.csv(landmarklist$polys, 'landmarkPolygons.csv')
+write.csv(landmarklist$points, 'untidyData/landmarkPoints.csv')
+write.csv(landmarklist$polys, 'untidyData/landmarkPolygons.csv')
 ```
 
-#### Map construction years to datetimes so that they can be read by kepler.gl
+##### Map construction years to datetimes so that they can be read by kepler.gl
 ```{r}
-landpoints <- read.csv('landmarkPoints.csv')
+landpoints <- read.csv('untidyData/landmarkPoints.csv')
 head(landpoints, n = 2)
 ```
 ```{r}
-# The first 3 columns are never going to be needed in this d.f's lifetime
+# The first 3 columns aren't going to be needed
 landpoints <- landpoints %>%
   select(c(4:ncol(landpoints)))
 ```
 
 ```{r}
-# need datetimes for kepler.gl
+# We need datetimes for kepler.gl
 #install.packages('datetime')
 library(datetime)
 library(purrr)
-# need to deal with "c.1850", "1879-1881", etc., and add times
+# We need to deal with "c.1850", "1879-1881", etc., and add times
 dates <- str_match(landpoints$properties.const_date, '[0-9]{4}')
 # helper func
 datify <- function(year) {
@@ -127,13 +140,14 @@ datify <- function(year) {
   y
 }
 dates <- as.datetime(as.numeric(map(dates, datify)))
+# Add processed dates to the d.f
 landpoints$datetime <- dates
-write.csv(landpoints, 'landmarkPoints.csv')
-# kepler won't allow NA's in date column, so need to filter those out.
+write.csv(landpoints, 'untidyData/landmarkPoints.csv')
+# kepler.gl won't allow NA's in date column, so need to filter those out.
 dated <- landpoints %>%
   filter(!is.na(landpoints$datetime))
 
-write.csv(dated, 'datedLandmarks.csv')
+write.csv(dated, 'untidyData/datedLandmarks.csv')
 ```
 
 
@@ -141,9 +155,14 @@ write.csv(dated, 'datedLandmarks.csv')
 ```{r}
 geo <- read_json('untidyData/Jazz Houses.geojson')
 str(geo$features[[1]])
-## TODO? -- link musicians' birthdays to time-lapse on kepler map.  (Not easy)
+## Future todo -- link musicians' birthdays to time-lapse on kepler map.  (Not easy)
 ```
 
+The rest of the work in building the map takes place over on kepler.gl,
+and consists of adding layers to the map.  The main part for our purposes is to
+add a filter layer so that the map only shows landmarks constructed within the
+filtered date range, which can then be part of a time-loop showing the viewer
+when different areas of the parish were being developed over the last 225 years.
 
 [Map with landmarks, jazz houses, Mississippi river, Orleans water features, and parish boundary](https://kepler.gl/demo/map?mapUrl=https://dl.dropboxusercontent.com/s/zzyxejqwsl7tta8/keplergl_iz7oex.json)
 
@@ -191,7 +210,7 @@ It also has a REST API, if you need to make requests for an app, e.g.
 - https://kepler.gl is a great way to visualize geo-data.  
 
 
---
+
 
 
 
