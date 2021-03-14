@@ -11,31 +11,31 @@ library(tidyverse)
 library(magrittr)
 library(ggplot2)
 library(corrplot)
-
-
+library(kableExtra)
 ```
 
-## 1. Wikipedia Tables: Overview
+## 1. Wikipedia: Overview
 
-In this section we explore patterns of recorded hurricane activity from 1900 -to- present in the Atlantic Ocean, Gulf of Mexico and Caribbean Sea. Our goal was to address the following questions:
+In this section we explored patterns of recorded hurricane activity from 1900 -to- present in the Atlantic Ocean, Gulf of Mexico and Caribbean Sea. Our goal was to address the following questions:
 
-1. Are there long-term trends in season hurricane activity that are apparent across broad geographic areas?
-2. Do cumulative measures of storm intensity correlate with storm related deaths or property damage? 
-3. Was 2005 hurricane season, which included Hurricane Katrina, atypical in terms of total storm activity?
+1. Has seasonal hurricane activity intensified over the past century across regions represented in this dataset?
+2. Do composite measures of storm intensity (e.g., annual metrics) correlate well with storm related deaths and/or property damage? 
+3. Was the 2005 hurricane season, which included Hurricane Katrina, unusual in terms of its intensity? 
 
-The data used in our analysis can be obtained via. NOAA's "North Atlantic hurricane Database (HURDAT)". However, we extracted the information from 20 html tables listed on the Wikipedia page, "Atlantic hurricane season". 
+Data used in our analysis are included in NOAA's "North Atlantic hurricane Database (HURDAT)".  However, we scraped our information from 20 html tables listed on the Wikipedia page, "Atlantic hurricane season" - https://en.wikipedia.org/wiki/Atlantic_hurricane_season. 
 
-Steps taken to format the data for analysis in R (i.e., Tidy format) included: 1) importing the data into RStudio as a list of dataframes (each representing different periods of time); 2) iterating over this list to subset, filter, rename, and update column types; and 3) combining these elements (20 total) into a final dataframe. 
+Steps taken to format the data for analysis in R (i.e., Tidy format) included: 1) importing the data into RStudio as a list of dataframes (each representing different periods of time); 2) iterating over this list to subset, filter, rename, and update column types; 3) addressing inconsistencies in variable entry, time-span, and title, and 4) combining these elements (20 total) into a final dataframe. 
 
-Additional cleaning was required to address uncertainties inherent to values recorded for several variables. For example, storm related deaths included values (char type) input as "Unknown", single numbers, approximate values, and/or a range of values. We converted this information to integer type and limited values to the minimum number of known deaths - values included as "Unknown" were treated as missing (NA) in order to make quantitative comparisons to other variables. We applied similar steps to a variable for annual storm damage. 
+Additional cleaning was required to address uncertainties inherent to values recorded for select variables. For example, storm-related deaths included values input as "Unknown", single numbers, approximate values, and/or a range of values. We converted this information to integer type and limited values to the minimum number of known deaths; values included as "Unknown" were treated as missing (NA) data. We applied similar steps to update a variable for  
+storm-related damages. 
 
-Once in Tidy form, we exported the dataset to an external .csv file. We then proceeded with our analyses. 
+Once in Tidy form, we exported the dataset to an external .csv file and proceeded with our analyses. 
 
-The following code documents the steps described above to import, clean, analyze, and export our data. This is followed by our summary for this section.
+The following code can be used to import, clean, analyze, and export our data as described above. We conclude this section with a summary of our findings. 
 
 ```{r}
 
-# import Wikipedia data tables into a list of dataframes
+# Import Wikipedia data tables into a list of dataframes
 
 temp <- read_html('https://en.wikipedia.org/wiki/Atlantic_hurricane_season')
 storms <- temp %>%
@@ -63,7 +63,7 @@ storms<- lapply(storms, function(x) {colnames(x)[7] <- 'Damage_USD'; x})
 
 storms<-purrr::map_dfr(storms[], dplyr::bind_rows)
 
-# clean/rename Deaths col and change type to integer
+# Clean/rename Deaths col and change type to integer
 
 storms<-storms%>%
   mutate(Deaths, Deaths=sub("None", "0", Deaths))%>%
@@ -77,7 +77,7 @@ storms<-storms%>%
 storms$Min_Known_Deaths <- as.integer(storms$Min_Known_Deaths)
 
 
-# clean Damage_USD column and convert to type integer
+# Clean Damage_USD column and convert to type integer
 
 storms<-storms%>%
   mutate(Damage_USD, Damage_USD=sub("\\$", "",  Damage_USD))%>%
@@ -89,9 +89,21 @@ storms<-storms%>%
 
 storms$Damage_USD<-as.integer(storms$Damage_USD)
 
-# Calculate Summary Statistics 
+# Review final dataframe: first five rows
+
+head(num, 5)%>%kbl%>%kable_material(c("striped"))
+
+# Save final dataframe as .csv file
+
+write.csv("Atlantic_Hurricanes.csv")
+
+# Calculate Summary Statistics and obtain average percentage of hurricanes and major hurricanes over the period of record (feature engineering).
 
 summary(storms)
+
+p_hurricane<-storms%>%select(Number_Tropical_Storms, Number_Hurricanes)%>%mutate(n_h = (Number_Hurricanes/Number_Tropical_Storms)*100)%>%summarize(mean_h = mean(n_h, na.rm=TRUE))
+
+p_major_hurricane<-storms%>%select(Number_Major_Hurricanes, Number_Hurricanes)%>%mutate(percent = (Number_Major_Hurricanes/Number_Hurricanes)*100)%>%summarize(mean_major = mean(percent, na.rm=TRUE))
 
 # Plot storms counts over time 
 
@@ -111,28 +123,25 @@ num%>%ggplot(aes(x = Year, y = Storm_Number, group = Storm_Type, color=
     theme(axis.title.y = element_text(size=14))+
     labs(y="Number of Storms", x = "Year")+
     labs(color = "Storm Type")+
-    ggtitle("Annual Count of Atlantic Storms Since 1900")+
+    ggtitle("Figure. Annual Count of Atlantic Storms Since 1900")+
     theme(plot.title = element_text(hjust = 0.5))
-
-View(storms)
 
 # Compare accumulated storm energy from 1900-Present
 
 ace <- storms%>%select(Year, Accumulated_Cyclone_Energy)
     
 ace%>%ggplot(aes(x = Year, y = Accumulated_Cyclone_Energy))+
-    geom_point()+
+    geom_point(color="light blue")+
     scale_x_discrete(breaks=c("1900","1920", "1940", "1960", "1980",
     "2000","2020"))+
-    geom_hline(yintercept = 152.5, linetype="solid", label= "Extremely Active
-    Season", color = "light blue", size=1.0)+
+    geom_hline(yintercept = 152.5, linetype="dotted", color = "dark green", size=0.750)+
     geom_vline(xintercept = "2005", linetype="dotted", color = "red",
     size=0.75)+
     theme_bw()+
     theme(axis.title.x = element_text(size=11))+
     theme(axis.title.y = element_text(size=11))+
-    labs(y="ACE (kt)", x = "Year", title = "Annual Accumulated Energy of
-    Atlantic Storms Since 1900", subtitle = "Reported in Square Knots (kt)")+
+    labs(y="ACE (kt)", x = "Year", title = "Figure 2. Annual Accumulated Energy of
+    Atlantic Storms Since 1900", subtitle = "Reported in Knots (kn)")+
     theme(plot.title = element_text(hjust = 0.5))+
     theme(plot.subtitle=element_text(size=11, hjust=0.5, face="italic",
     color="black"))
@@ -142,12 +151,12 @@ ace%>%ggplot(aes(x = Year, y = Accumulated_Cyclone_Energy))+
 ace_death<-storms
 
 ace_death%>%ggplot(aes(Accumulated_Cyclone_Energy, Min_Known_Deaths))+
-    geom_point()+
+    geom_point(color="light blue")+
     theme_bw()+
     theme(axis.title.x = element_text(size=10))+
     theme(axis.title.y = element_text(size=10))+
     labs(y="Documented Deaths (Minimum Count)", x = "Accumulated
-    Cyclone Energy (kt)", title = "Storm Related Deaths vs. Cumulative Storm
+    Cyclone Energy (kn)", title = "Figure 2. Storm Related Deaths vs. Cumulative Storm
     Intensity: 1900 to Present")+
     theme(plot.title = element_text(hjust = 0.5))
 
@@ -156,12 +165,12 @@ ace_death%>%ggplot(aes(Accumulated_Cyclone_Energy, Min_Known_Deaths))+
 ace_damage<-storms
 
 ace_damage%>%ggplot(aes(Accumulated_Cyclone_Energy, Damage_USD))+
-    geom_point()+
+    geom_point(color="light blue")+
     theme_bw()+
     theme(axis.title.x = element_text(size=10))+
     theme(axis.title.y = element_text(size=10))+
     labs(y="Storm Damage (USD)", x = "Accumulated
-    Cyclone Energy (kt)", title = "Total Storm Damage vs. Cumulative Storm
+    Cyclone Energy (kn)", title = "Figure 3. Total Storm Damage vs. Cumulative Storm
     Intensity: 1900 to Present")+
     theme(plot.title = element_text(hjust = 0.5))
 
@@ -169,6 +178,19 @@ ace_damage%>%ggplot(aes(Accumulated_Cyclone_Energy, Damage_USD))+
 
 
 ```
-## 1. Wikipedia Tables: Results 
+## Wikipedia: Results 
 
-Will work on this before we meet.
+The total number of tropical storms recorded in the Atlantic ranged from 0 to 15 from years 1900-2020. Approximately 52% of these storms were documented hurricanes. And ~ 38% of these hurricanes were identified as Category 3 or higher on the Saffir–Simpson hurricane wind scale (i.e., major hurricanes). While inter-annual variation in the number of Atlantic hurricanes was high, appears to be an upward trend in these numbers since 1900 (Figure 1). In contrast, there were no apparent trends in Accumulated Cyclone Energy (ACE: an aggregate index of storm energy) over the same period (Figure 2). 
+
+Additionally, there was no visible relationship between annual ACE estimates and either storm related deaths or damage. These results are unexpected and may owe to several factors: 1) hurricanes that made landfall were not distinguished in the data; and 2) inter-site variations in population and infrastructure may mask the impact of hurricanes, particularly when data are aggregated annually and over large spatial scales. Both were the case for this dataset. 
+
+It is interesting to note that there were only 19 "extremely active" hurricane seasons in the past 120 years(i.e., ACE >152.5; dashed green line in Figure 2). And that only year 1930 exceeded the 2005 hurricane season in terms of total storm activity (ACE 258.6 vs 250.1, respectively). Figure 2 includes a dashed red line to indicate year 2005 - which included Hurricane Katrina. While 2005 ranked 8th highest in storm-related deaths (3,912; there were ~12,000 deaths recorded in 1998) the dataset did not include an assessment of storm-related damages for this year.  
+
+Our analyses can be refined/improved through additional data collection and documentation. In particular, we offer the following recommendations for future study: 1) limit the scope of analysis to the Gulf of Mexico, compile data for individual storm events rather than annual totals; 2) distinguish hurricanes that made landfall from annual counts; 3) acquire and verify additional estimates of storm damage, 4) employ time series models to evaluate any trends in annual hurricane patterns over time.   
+
+For information regarding ACE measurements and categories, please refer to the following websites:
+
+1. National Weather Service Climate Predication Center: https://www.cpc.ncep.noaa.gov/products/outlooks/Background.html
+
+2. Saffir Simpson Scale: https://en.wikipedia.org/wiki/Saffir%E2%80%93Simpson_scale#:~:text=To%20be%20classified%20as%20a,of%20at%20least%20157%20mph.
+
