@@ -1,0 +1,3 @@
+In this project we gathered data on the history of New Orleans from a variety of sources and formats. By transforming this data into tidy R dataframes, we were able to begin to tell the story of how New Orleans has changed due to Hurricane Katrina. Gathering this data together in a single format made it more accessible for analysis. This work also serves as an example for future work in R with GeoJASON, HTML, and Excel datasets.
+
+We expect that investigating complex systems, like a changing city, will almost always require gathering together datasets initially designed with other purposes in mind. We look forward to continuing to explore best practices for transforming and visualizing data from a wide variety of sources.
